@@ -52,7 +52,7 @@ async def run_stage(ctx: RunContext, listing_ids: list[int]) -> list[int]:
         await ctx.finish_stage("text", ok=len(listing_ids), rejected=0, errors=0, skipped=True)
         return list(listing_ids)
 
-    client = client_for("text")
+    client = client_for("text", ctx.settings)
     semaphore = asyncio.Semaphore(max(1, app_settings.text_concurrency))
     counters = {"ok": 0, "rejected": 0, "errors": 0}
     accepted: list[int] = []

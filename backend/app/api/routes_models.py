@@ -2,30 +2,40 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.db import get_session
 from app.ollama import OllamaClient, OllamaError
 from app.schemas import ModelOut, ModelsResponse
+from app.settings_store import get_all
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 
 
-def _endpoints() -> dict[str, str]:
-    """Eindeutige Ollama-URLs mit den Stages, die sie bedienen."""
+def _endpoints(settings_values: dict) -> dict[str, str]:
+    """Eindeutige Ollama-URLs mit den Stages, die sie bedienen.
+
+    Beruecksichtigt die im UI hinterlegten Adressen (Tabelle `settings`) vor
+    dem .env-Fallback - siehe app.ollama.client_for.
+    """
+    from app.ollama import client_for
+
     mapping: dict[str, list[str]] = {}
     for stage in ("text", "vision", "interpretation", "ranking"):
-        mapping.setdefault(settings.ollama_url_for(stage), []).append(stage)
+        url = client_for(stage, settings_values).base_url
+        mapping.setdefault(url, []).append(stage)
     return {url: ", ".join(stages) for url, stages in mapping.items()}
 
 
 @router.get("", response_model=ModelsResponse)
-async def list_models() -> ModelsResponse:
+async def list_models(session: AsyncSession = Depends(get_session)) -> ModelsResponse:
     endpoints: list[dict] = []
     seen: dict[str, ModelOut] = {}
     errors: list[str] = []
 
-    for url, stages in _endpoints().items():
+    settings_values = await get_all(session)
+    for url, stages in _endpoints(settings_values).items():
         client = OllamaClient(url)
         try:
             models = await client.list_models()
@@ -47,13 +57,16 @@ async def list_models() -> ModelsResponse:
 
 
 @router.post("/test")
-async def test_model(payload: dict) -> dict:
+async def test_model(payload: dict, session: AsyncSession = Depends(get_session)) -> dict:
     """Testcall gegen ein Modell - prueft Erreichbarkeit und Antwortformat."""
     model = (payload.get("model") or "").strip()
     stage = payload.get("stage") or "text"
     if not model:
         return {"ok": False, "error": "Kein Modell angegeben"}
-    client = OllamaClient(settings.ollama_url_for(stage))
+    from app.ollama import client_for
+
+    settings_values = await get_all(session)
+    client = client_for(stage, settings_values)
     try:
         response = await client.generate_text(
             model,

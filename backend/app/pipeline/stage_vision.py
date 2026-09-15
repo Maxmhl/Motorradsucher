@@ -30,7 +30,7 @@ async def _describe_images(
     ctx: RunContext, listing_id: int, vision_model: str
 ) -> list[str]:
     """Beschreibt alle Bilder eines Inserats und legt das Thumbnail an."""
-    client = client_for("vision")
+    client = client_for("vision", ctx.settings)
 
     async with session_scope() as session:
         rows = (
@@ -95,7 +95,7 @@ async def run_stage(ctx: RunContext, listing_ids: list[int]) -> list[int]:
         await ctx.finish_stage("vision", ok=len(listing_ids), rejected=0, errors=0, skipped=True)
         return list(listing_ids)
 
-    interpreter = client_for("interpretation")
+    interpreter = client_for("interpretation", ctx.settings)
     semaphore = asyncio.Semaphore(max(1, app_settings.vision_concurrency))
     counters = {"ok": 0, "rejected": 0, "errors": 0, "no_images": 0}
     accepted: list[int] = []

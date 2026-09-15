@@ -182,6 +182,22 @@ class OllamaClient:
         return (data.get("response") or "").strip()
 
 
-def client_for(stage: str) -> OllamaClient:
-    """Client fuer eine Pipeline-Stage - respektiert getrennte Instanzen je GPU."""
+def client_for(stage: str, settings_values: dict[str, Any] | None = None) -> OllamaClient:
+    """Client fuer eine Pipeline-Stage - respektiert getrennte Instanzen je GPU.
+
+    Die Ollama-Adresse(n) koennen im UI (Tabelle `settings`) hinterlegt werden;
+    das hat Vorrang vor der .env-Konfiguration. Ist im UI nichts gesetzt,
+    greift der gewohnte Fallback aus `app.config.settings`.
+    """
+    values = settings_values or {}
+    base = (values.get("ollama_base_url") or "").strip()
+    text_url = (values.get("ollama_base_url_text") or "").strip()
+    vision_url = (values.get("ollama_base_url_vision") or "").strip()
+
+    if stage in ("text", "interpretation", "ranking") and text_url:
+        return OllamaClient(text_url)
+    if stage == "vision" and vision_url:
+        return OllamaClient(vision_url)
+    if base:
+        return OllamaClient(base)
     return OllamaClient(settings.ollama_url_for(stage))

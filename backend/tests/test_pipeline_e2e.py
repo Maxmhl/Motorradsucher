@@ -130,9 +130,9 @@ def patched(monkeypatch):
         async def generate_text(self, model, prompt, **kwargs):
             return "Blauer Rahmen, blaue Felgen, keine sichtbaren Kratzer."
 
-    monkeypatch.setattr("app.pipeline.stage_text.client_for", lambda s: FakeOllama(s))
-    monkeypatch.setattr(stage_vision, "client_for", lambda s: FakeOllama(s))
-    monkeypatch.setattr("app.pipeline.stage_rank.client_for", lambda s: FakeOllama(s))
+    monkeypatch.setattr("app.pipeline.stage_text.client_for", lambda s, *_a, **_k: FakeOllama(s))
+    monkeypatch.setattr(stage_vision, "client_for", lambda s, *_a, **_k: FakeOllama(s))
+    monkeypatch.setattr("app.pipeline.stage_rank.client_for", lambda s, *_a, **_k: FakeOllama(s))
 
 
 async def _configure() -> None:

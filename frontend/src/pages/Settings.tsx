@@ -192,6 +192,51 @@ export default function Settings() {
       )}
 
       <section className="card p-5">
+        <h2 className="text-sm font-semibold text-slate-200">Ollama-Server</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Adresse(n) der Ollama-Instanz(en). Leer lassen, um die Server-Konfiguration
+          (<code>OLLAMA_BASE_URL*</code> in <code>.env</code>) zu verwenden.
+          Getrennte Adressen erlauben es, Text- und Bild-Stufe auf unterschiedliche
+          GPUs/Hosts zu legen.
+        </p>
+        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <div>
+            <label className="label" htmlFor="ollama-base">Standard-Adresse</label>
+            <input
+              id="ollama-base"
+              className="field font-mono text-xs"
+              placeholder="http://192.168.1.10:11434"
+              value={settings.ollama_base_url}
+              onChange={(event) => update('ollama_base_url', event.target.value)}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Gilt für alle Stufen, sofern unten nichts Spezifischeres gesetzt ist.
+            </p>
+          </div>
+          <div>
+            <label className="label" htmlFor="ollama-text">Adresse für Text/Interpretation/Ranking</label>
+            <input
+              id="ollama-text"
+              className="field font-mono text-xs"
+              placeholder="http://192.168.1.10:11434"
+              value={settings.ollama_base_url_text}
+              onChange={(event) => update('ollama_base_url_text', event.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="ollama-vision">Adresse für Bild-Beschreibung</label>
+            <input
+              id="ollama-vision"
+              className="field font-mono text-xs"
+              placeholder="http://192.168.1.10:11435"
+              value={settings.ollama_base_url_vision}
+              onChange={(event) => update('ollama_base_url_vision', event.target.value)}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="card p-5">
         <h2 className="text-sm font-semibold text-slate-200">Modellauswahl je Pipeline-Stufe</h2>
         <p className="mt-1 text-xs text-slate-500">
           Gelistet wird, was auf dem Server installiert ist (Ollama <code>/api/tags</code>).

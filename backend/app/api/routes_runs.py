@@ -7,12 +7,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import scheduler as scheduler_mod
-from app.config import settings
 from app.db import get_session
 from app.models import FinalClass, Listing, ListingStatus, LogEntry, Run
-from app.ollama import OllamaClient
+from app.ollama import OllamaClient, client_for
 from app.pipeline.runner import RunnerBusyError, runner
 from app.schemas import DashboardOut, LogOut, RunOut
+from app.settings_store import get_all
 
 router = APIRouter(prefix="/api", tags=["runs"])
 
@@ -88,8 +88,10 @@ async def dashboard(session: AsyncSession = Depends(get_session)) -> DashboardOu
         ).scalar_one()
 
     endpoints: dict[str, list[str]] = {}
+    settings_values = await get_all(session)
     for stage in ("text", "vision", "interpretation", "ranking"):
-        endpoints.setdefault(settings.ollama_url_for(stage), []).append(stage)
+        url = client_for(stage, settings_values).base_url
+        endpoints.setdefault(url, []).append(stage)
     ollama = []
     for url, stages in endpoints.items():
         health = await OllamaClient(url).health()

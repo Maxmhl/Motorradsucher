@@ -42,6 +42,10 @@ DEFAULTS: dict[str, Any] = {
         "Keine auffälligen Kratzer an Tank oder Verkleidung, keine Schleifspuren "
         "an Lenkerenden, Hebeln oder Fußrasten, keine ausgeblichenen Teile."
     ),
+    # --- Ollama-Verbindung (leer = Fallback auf .env/OLLAMA_BASE_URL*) ---
+    "ollama_base_url": "",
+    "ollama_base_url_text": "",
+    "ollama_base_url_vision": "",
     # --- Verhalten ---
     "top_n_rejected": 3,  # Top 3 je Reject-Klasse im UI (Stufe 6)
     "keep_thumbnail": True,  # ein Vorschaubild je Inserat dauerhaft behalten

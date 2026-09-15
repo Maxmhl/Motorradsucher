@@ -80,7 +80,7 @@ async def _rank_class(
 
     scores: dict[int, tuple[float, str]] = {}
     if model:
-        client = client_for("ranking")
+        client = client_for("ranking", ctx.settings)
         for start in range(0, len(entries), BATCH_SIZE):
             ctx.raise_if_cancelled()
             batch = entries[start : start + BATCH_SIZE]

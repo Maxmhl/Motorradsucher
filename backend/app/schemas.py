@@ -105,6 +105,9 @@ class SettingsIn(BaseModel):
     vision_model: str | None = None
     interpretation_model: str | None = None
     ranking_model: str | None = None
+    ollama_base_url: str | None = None
+    ollama_base_url_text: str | None = None
+    ollama_base_url_vision: str | None = None
     criteria: dict[str, Any] | None = None
     text_exclusions: str | None = None
     optical_criteria: str | None = None

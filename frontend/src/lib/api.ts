@@ -106,6 +106,9 @@ export interface AppSettings {
   vision_model: string
   interpretation_model: string
   ranking_model: string
+  ollama_base_url: string
+  ollama_base_url_text: string
+  ollama_base_url_vision: string
   criteria: Criteria
   text_exclusions: string
   optical_criteria: string
