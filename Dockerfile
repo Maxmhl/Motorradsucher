@@ -13,7 +13,7 @@ RUN npm run build
 # Stufe 2: Backend - das Playwright-Image bringt Chromium und alle
 # Systembibliotheken für die JS-lastigen Seiten bereits mit.
 # ---------------------------------------------------------------------------
-FROM mcr.microsoft.com/playwright/python:v1.49.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
