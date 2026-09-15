@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -36,6 +37,10 @@ class ListingStatus(enum.StrEnum):
     optical_ok = "optical_ok"
     analyzed = "analyzed"
     error = "error"
+    # Erkannt als dasselbe Fahrzeug wie ein bereits (auf einer anderen Seite)
+    # analysiertes Inserat (siehe Listing.fingerprint) - durchlaeuft die
+    # KI-Stufen nicht erneut, uebernimmt stattdessen dessen Ergebnis.
+    duplicate = "duplicate"
 
 
 class FinalClass(enum.StrEnum):
@@ -66,10 +71,20 @@ class Site(Base):
 
 class Listing(Base):
     __tablename__ = "listings"
+    __table_args__ = (Index("ix_listing_fingerprint", "fingerprint"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     url: Mapped[str] = mapped_column(String(1024), unique=True, index=True)
     site_id: Mapped[int | None] = mapped_column(ForeignKey("sites.id"))
+    # Seitenuebergreifende Dedup-Erkennung (Titel/Preis/Baujahr/km-Heuristik) -
+    # verhindert, dass dasselbe Motorrad, das auf mehreren Portalen inseriert
+    # wurde, mehrfach durch die KI-Stufen laeuft. Siehe scrapers/parser.py.
+    fingerprint: Mapped[str | None] = mapped_column(String(40))
+    # Gesetzt, wenn dieses Inserat als Dublette eines anderen erkannt wurde -
+    # das referenzierte Inserat traegt die eigentliche Bewertung.
+    duplicate_of_id: Mapped[int | None] = mapped_column(
+        ForeignKey("listings.id", ondelete="SET NULL")
+    )
 
     title: Mapped[str | None] = mapped_column(String(512))
     model: Mapped[str | None] = mapped_column(String(128))

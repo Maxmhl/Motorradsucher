@@ -3,6 +3,7 @@ HTML-Fixtures getestet werden kann (siehe backend/tests/fixtures)."""
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -47,6 +48,42 @@ def clean_text(text: str | None) -> str:
     if not text:
         return ""
     return re.sub(r"[ \t\xa0]+", " ", text).strip()
+
+
+# --------------------------------------------------------------------------
+# Seitenuebergreifende Dedup-Erkennung (Fingerprint)
+# --------------------------------------------------------------------------
+#
+# Dieselben privaten Inserate werden haeufig wortgleich auf mehreren Portalen
+# (Kleinanzeigen, mobile.de, 1000PS) eingestellt. Die URL allein reicht dann
+# nicht zur Dedup-Erkennung - ein Fingerprint aus normalisiertem Titel plus
+# grob gerundetem Preis/Baujahr/km faengt die haeufigsten Faelle ab, ohne
+# Bildvergleich zu benoetigen. Es ist eine Heuristik: unterschiedlich
+# formulierte Inserate desselben Fahrzeugs koennen durchrutschen, dafuer gibt
+# es praktisch keine falsch-positiven Treffer bei komplett verschiedenen
+# Fahrzeugen (Jahr/Preis/km-Bucket muessen alle uebereinstimmen).
+
+_TITLE_NOISE = re.compile(r"[^a-z0-9äöüß ]+")
+
+
+def _title_tokens(title: str) -> list[str]:
+    text = _TITLE_NOISE.sub(" ", title.lower())
+    tokens = {token for token in text.split() if len(token) > 1}
+    return sorted(tokens)
+
+
+def compute_fingerprint(
+    title: str | None, price: int | None, year: int | None, km: int | None
+) -> str | None:
+    """Fingerprint fuer seitenuebergreifende Dedup - None, wenn zu wenig Daten."""
+    tokens = _title_tokens(title or "")
+    if not tokens:
+        return None
+    price_bucket = round(price / 100) * 100 if price else "x"
+    km_bucket = round(km / 1000) * 1000 if km is not None else "x"
+    year_key = year if year else "x"
+    key = f"{year_key}|{price_bucket}|{km_bucket}|{'-'.join(tokens[:8])}"
+    return hashlib.sha1(key.encode("utf-8")).hexdigest()[:20]
 
 
 # --------------------------------------------------------------------------

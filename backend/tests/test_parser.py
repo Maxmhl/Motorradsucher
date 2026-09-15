@@ -8,6 +8,7 @@ from app.pipeline.stage_scrape import passes_local_prefilter
 from app.scrapers.config import get_sites
 from app.scrapers.parser import (
     ListingDetail,
+    compute_fingerprint,
     parse_detail_page,
     parse_number,
     parse_search_page,
@@ -117,3 +118,23 @@ def test_detail_falls_back_to_description(fixture_html):
     detail = parse_detail_page(html, "https://example.org/x", cfg)
     assert detail.year == 2021
     assert detail.km == 9800
+
+
+def test_fingerprint_matches_across_sites_for_same_vehicle():
+    """Dasselbe Fahrzeug, leicht anders formuliert, muss denselben Fingerprint ergeben."""
+    fp_kleinanzeigen = compute_fingerprint("Yamaha MT-07 ABS, Topzustand", 4800, 2019, 6400)
+    fp_1000ps = compute_fingerprint("Yamaha MT 07 ABS Topzustand!!", 4800, 2019, 6250)
+    assert fp_kleinanzeigen == fp_1000ps
+
+
+def test_fingerprint_differs_for_different_vehicles():
+    fp_a = compute_fingerprint("Yamaha MT-07 ABS", 4800, 2019, 6400)
+    fp_b = compute_fingerprint("Suzuki SV650", 4800, 2019, 6400)
+    fp_c = compute_fingerprint("Yamaha MT-07 ABS", 3200, 2019, 6400)
+    assert fp_a != fp_b
+    assert fp_a != fp_c
+
+
+def test_fingerprint_none_without_title():
+    assert compute_fingerprint("", 4800, 2019, 6400) is None
+    assert compute_fingerprint(None, 4800, 2019, 6400) is None

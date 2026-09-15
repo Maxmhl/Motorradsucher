@@ -87,7 +87,7 @@ class PipelineRunner:
             await ctx.log(f"Run {ctx.run_id} gestartet")
 
             # Stufe 1
-            new_ids = await stage_scrape.run_stage(ctx)
+            new_ids, scraped_ids = await stage_scrape.run_stage(ctx)
 
             # Inserate, die aus frueheren Runs noch unfertig sind, mitnehmen.
             pending = await _pending_listing_ids()
@@ -101,8 +101,14 @@ class PipelineRunner:
             await stage_vision.run_stage(ctx, text_ok)
             # Stufe 4
             await stage_classify.run_stage(ctx, listing_ids)
-            # Stufe 5
-            await stage_cleanup.run_stage(ctx, listing_ids)
+            # Dubletten, deren Original erst in diesem Run fertig wurde,
+            # jetzt nachtraeglich mit dessen Ergebnis abgleichen.
+            resolved = await _resolve_pending_duplicates()
+            if resolved:
+                await ctx.log(f"{resolved} Dublette(n) nach Original-Bewertung aufgelöst")
+            # Stufe 5 - auch Dubletten mit aufraeumen, deren heruntergeladene
+            # Bilder sonst liegen blieben (sie durchlaufen Stufe 3 nicht).
+            await stage_cleanup.run_stage(ctx, list(dict.fromkeys(listing_ids + scraped_ids)))
             # Stufe 6 - alle Inserate je Klasse neu ranken, nicht nur die neuen,
             # damit die Reihenfolge im UI klassenweit stimmt.
             await stage_rank.run_stage(ctx, await _all_by_class())
@@ -142,6 +148,38 @@ async def _pending_listing_ids(limit: int = 500) -> list[int]:
             .limit(limit)
         )
         return list(rows.scalars().all())
+
+
+async def _resolve_pending_duplicates() -> int:
+    """Uebernimmt fuer Dubletten, deren Original inzwischen fertig ist, dessen Bewertung.
+
+    Faengt den Fall ab, dass Original und Dublette im selben Run gefunden
+    wurden und die Dublette gespeichert wurde, bevor das Original die
+    KI-Stufen durchlaufen hatte (siehe stage_scrape._store_listing).
+    """
+    resolved = 0
+    async with session_scope() as session:
+        pending = (
+            await session.execute(
+                select(Listing).where(
+                    Listing.status == ListingStatus.duplicate,
+                    Listing.duplicate_of_id.is_not(None),
+                )
+            )
+        ).scalars().all()
+        for dup in pending:
+            source = await session.get(Listing, dup.duplicate_of_id)
+            if source is None or source.final_class is None:
+                continue
+            dup.final_class = source.final_class
+            dup.rank_score = source.rank_score
+            dup.text_verdict = source.text_verdict
+            dup.text_reasoning = source.text_reasoning
+            dup.optical_verdict = source.optical_verdict
+            dup.optical_reasoning = source.optical_reasoning
+            dup.status = ListingStatus.analyzed
+            resolved += 1
+    return resolved
 
 
 async def _all_by_class() -> dict[str, list[int]]:

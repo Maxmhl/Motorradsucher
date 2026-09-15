@@ -20,7 +20,12 @@ from app.models import Image, Listing, ListingStatus, Site
 from app.pipeline.context import RunContext
 from app.scrapers.config import SiteConfig, get_sites
 from app.scrapers.fetchers import BlockedError, ScrapeError, fetcher_for
-from app.scrapers.parser import ListingStub, parse_detail_page, parse_search_page
+from app.scrapers.parser import (
+    ListingStub,
+    compute_fingerprint,
+    parse_detail_page,
+    parse_search_page,
+)
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +83,26 @@ async def _known_urls(urls: list[str]) -> set[str]:
         return set(rows.scalars().all())
 
 
+async def _find_duplicate(fingerprint: str | None) -> Listing | None:
+    """Sucht ein bereits gespeichertes Inserat mit demselben Fingerprint.
+
+    Bevorzugt ein bereits fertig analysiertes Original, damit die Dublette
+    sofort dessen Klasse/Ranking uebernehmen kann, statt auf einen spaeteren
+    Run zu warten.
+    """
+    if not fingerprint:
+        return None
+    async with session_scope() as session:
+        rows = (
+            await session.execute(
+                select(Listing)
+                .where(Listing.fingerprint == fingerprint, Listing.duplicate_of_id.is_(None))
+                .order_by(Listing.final_class.is_(None), Listing.id.asc())
+            )
+        ).scalars().all()
+        return rows[0] if rows else None
+
+
 async def _collect_stubs(
     ctx: RunContext, cfg: SiteConfig, fetcher: Any, criteria: dict[str, Any]
 ) -> list[ListingStub]:
@@ -113,17 +138,28 @@ async def _collect_stubs(
 
 async def _store_listing(
     ctx: RunContext, cfg: SiteConfig, site_id: int, detail: Any
-) -> int | None:
-    """Neues Inserat samt Bildern speichern."""
+) -> tuple[int | None, bool]:
+    """Neues Inserat samt Bildern speichern.
+
+    Gibt (listing_id, is_duplicate) zurueck. Ist is_duplicate True, wurde das
+    Inserat bereits (auf einer anderen Seite) unter demselben Fingerprint
+    gefunden - es wird gespeichert (fuer den Link/die Nachvollziehbarkeit),
+    durchlaeuft aber keine KI-Stufe erneut, sondern uebernimmt die Bewertung
+    des Originals.
+    """
+    fingerprint = compute_fingerprint(detail.title, detail.price, detail.year, detail.km)
+    duplicate_source = await _find_duplicate(fingerprint)
+
     async with session_scope() as session:
         exists = (
             await session.execute(select(Listing.id).where(Listing.url == detail.url))
         ).scalar_one_or_none()
         if exists:
-            return None
+            return None, False
         listing = Listing(
             url=detail.url,
             site_id=site_id,
+            fingerprint=fingerprint,
             title=detail.title[:512] or None,
             model=(detail.model or None),
             price=detail.price,
@@ -134,9 +170,31 @@ async def _store_listing(
             status=ListingStatus.new,
             run_id=ctx.run_id,
         )
+        if duplicate_source is not None:
+            listing.status = (
+                ListingStatus.analyzed
+                if duplicate_source.final_class is not None
+                else ListingStatus.duplicate
+            )
+            listing.duplicate_of_id = duplicate_source.id
+            listing.final_class = duplicate_source.final_class
+            listing.rank_score = duplicate_source.rank_score
+            listing.rank_reasoning = (
+                f"Gleiches Fahrzeug bereits über {duplicate_source.url} bewertet."
+            )
+            listing.text_verdict = duplicate_source.text_verdict
+            listing.text_reasoning = duplicate_source.text_reasoning
+            listing.optical_verdict = duplicate_source.optical_verdict
+            listing.optical_reasoning = duplicate_source.optical_reasoning
         session.add(listing)
         await session.flush()
         listing_id = listing.id
+
+    if duplicate_source is not None:
+        await ctx.log(
+            f"Dublette erkannt (bereits als {duplicate_source.url} bewertet): {detail.url}",
+            level="info",
+        )
 
     downloaded = await download_images(listing_id, detail.image_urls)
     if downloaded:
@@ -162,11 +220,15 @@ async def _store_listing(
                 listing = await session.get(Listing, listing_id)
                 if listing:
                     listing.thumbnail_path = thumbnail
-    return listing_id
+    return listing_id, duplicate_source is not None
 
 
-async def run_stage(ctx: RunContext) -> list[int]:
-    """Gibt die IDs der neu angelegten Inserate zurueck."""
+async def run_stage(ctx: RunContext) -> tuple[list[int], list[int]]:
+    """Gibt (neue Inserate fuer die KI-Stufen, alle neu gespeicherten IDs) zurueck.
+
+    Dubletten sind in der zweiten Liste enthalten (fuer Bildbereinigung/
+    Aufloesung), aber nicht in der ersten (sie ueberspringen Text-/Bild-Stufe).
+    """
     criteria = ctx.settings.get("criteria") or {}
     max_listings = int(ctx.settings.get("max_listings_per_run") or 200)
     sites = [cfg for cfg in get_sites().values() if cfg.enabled]
@@ -175,7 +237,8 @@ async def run_stage(ctx: RunContext) -> list[int]:
     await ctx.log(f"Starte Scraping über {len(sites)} Seite(n)")
 
     new_ids: list[int] = []
-    totals = {"found": 0, "known": 0, "filtered": 0, "new": 0, "errors": 0}
+    all_ids: list[int] = []
+    totals = {"found": 0, "known": 0, "filtered": 0, "new": 0, "errors": 0, "duplicates": 0}
 
     for cfg in sites:
         ctx.raise_if_cancelled()
@@ -229,10 +292,16 @@ async def run_stage(ctx: RunContext) -> list[int]:
                         await ctx.advance("scrape")
                         continue
 
-                    listing_id = await _store_listing(ctx, cfg, site_id, detail)
+                    listing_id, is_duplicate = await _store_listing(ctx, cfg, site_id, detail)
                     if listing_id is not None:
-                        new_ids.append(listing_id)
                         totals["new"] += 1
+                        all_ids.append(listing_id)
+                        if is_duplicate:
+                            totals["duplicates"] += 1
+                        else:
+                            # Nur echte Erstinserate durchlaufen die KI-Stufen -
+                            # Dubletten haben ihre Bewertung bereits uebernommen.
+                            new_ids.append(listing_id)
                     await ctx.advance("scrape")
         except Exception as exc:  # noqa: BLE001 - eine Seite darf den Run nicht kippen
             totals["errors"] += 1
@@ -242,6 +311,7 @@ async def run_stage(ctx: RunContext) -> list[int]:
     await ctx.finish_stage("scrape", **totals)
     await ctx.log(
         f"Scraping fertig: {totals['found']} gefunden, {totals['new']} neu, "
-        f"{totals['known']} bekannt, {totals['filtered']} vorgefiltert"
+        f"{totals['known']} bekannt, {totals['filtered']} vorgefiltert, "
+        f"{totals['duplicates']} Dubletten (bereits über andere Seite bewertet)"
     )
-    return new_ids
+    return new_ids, all_ids
