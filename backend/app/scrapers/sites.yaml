@@ -35,13 +35,17 @@ sites:
       # {page} wird eingesetzt, Seite 1 nutzt das Template ohne Suffix.
       template: >-
         https://www.kleinanzeigen.de/s-motorraeder/seite:{page}/preis:0:{price_max}/{query}/k0c305
-    wait_for: ["#srchrslt-adtable", "article.aditem"]
+    wait_for: ["#srchrslt-adtable", "article[data-adid]", "article.aditem"]
+    # Stand: 2026-09 - Kleinanzeigen liefert Trefferlisten jetzt als
+    # <article data-adid="..." data-href="/s-anzeige/..."> ohne .aditem-Klasse.
+    # Fallbacks auf das alte Layout (.aditem) bleiben stehen, falls es
+    # testweise wieder ausgespielt wird.
     list:
-      item: ["article.aditem", "li.ad-listitem article"]
-      link: ["a.ellipsis", "h2 a", "a[href^='/s-anzeige/']"]
-      title: ["a.ellipsis", "h2 a"]
-      price: [".aditem-main--middle--price-shipping--price", ".aditem-details strong"]
-      location: [".aditem-main--top--left"]
+      item: ["article[data-adid]", "article.aditem", "li.ad-listitem article"]
+      link: ["h3 a[href^='/s-anzeige/']", "a.ellipsis", "h2 a", "a[href^='/s-anzeige/']"]
+      title: ["h3 a", "a.ellipsis", "h2 a"]
+      price: ["p.text-title3.font-strong.text-secondary", ".aditem-main--middle--price-shipping--price", ".aditem-details strong"]
+      location: ["svg[data-title='locationOutline'] ~ span", ".aditem-main--top--left"]
     detail:
       wait_for: ["#viewad-description-text", "#viewad-title"]
       title: ["#viewad-title", "h1"]
