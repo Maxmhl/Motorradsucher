@@ -51,9 +51,15 @@ async def apply_schedule() -> dict[str, str | bool | None]:
     return {
         "enabled": True,
         "cron": expression,
-        "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+        "next_run": _next_run(job),
         "error": None,
     }
+
+
+def _next_run(job: object | None) -> str | None:
+    """APScheduler setzt next_run_time erst, wenn der Scheduler laeuft."""
+    next_run = getattr(job, "next_run_time", None)
+    return next_run.isoformat() if next_run else None
 
 
 def describe() -> dict[str, str | bool | None]:
@@ -61,7 +67,7 @@ def describe() -> dict[str, str | bool | None]:
     return {
         "running": scheduler.running,
         "scheduled": job is not None,
-        "next_run": job.next_run_time.isoformat() if job and job.next_run_time else None,
+        "next_run": _next_run(job),
         "timezone": settings.scheduler_timezone,
     }
 

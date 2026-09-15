@@ -1,0 +1,25 @@
+services:
+  motorradsucher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: motorradsucher:latest
+    container_name: motorradsucher
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Ollama läuft auf dem Host (wegen GPU-Zugriff), nicht im Container.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      DATA_DIR: /data
+    volumes:
+      # Datenbank, Vorschaubilder und temporäre Vollbilder überleben Neustarts.
+      - ./data:/data
+      # Selektoren nachschärfen, ohne das Image neu zu bauen:
+      # danach im UI "sites.yaml neu laden" drücken.
+      - ./backend/app/scrapers/sites.yaml:/app/app/scrapers/sites.yaml:ro
+    extra_hosts:
+      # Damit host.docker.internal auch unter Linux auf den Host zeigt.
+      - "host.docker.internal:host-gateway"

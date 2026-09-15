@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ImageOut(BaseModel):
@@ -43,6 +43,14 @@ class ListingOut(BaseModel):
     first_seen: datetime
     last_updated: datetime
     images: list[ImageOut] = Field(default_factory=list)
+
+    @field_validator("site", mode="before")
+    @classmethod
+    def _site_name(cls, value: Any) -> str | None:
+        """`Listing.site` ist die ORM-Beziehung - hier zaehlt nur der Name."""
+        if value is None or isinstance(value, str):
+            return value
+        return getattr(value, "name", None)
 
 
 class ListingPage(BaseModel):

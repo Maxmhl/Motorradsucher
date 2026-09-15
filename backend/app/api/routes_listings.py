@@ -25,7 +25,6 @@ SORT_FIELDS = {
 
 def _to_out(listing: Listing) -> ListingOut:
     out = ListingOut.model_validate(listing)
-    out.site = listing.site.name if listing.site else None
     out.thumbnail_url = (
         f"/api/listings/{listing.id}/thumbnail" if listing.thumbnail_path else None
     )
