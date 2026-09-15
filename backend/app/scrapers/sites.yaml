@@ -1,0 +1,127 @@
+# Zentrale Scraper-Konfiguration.
+#
+# Website-Layouts aendern sich - deshalb stehen ALLE Selektoren hier und nicht
+# im Code. Nach einem Layout-Wechsel reicht es, diese Datei anzupassen:
+#   docker compose exec backend python -m app.scrapers.check --site kleinanzeigen
+# prueft die Selektoren gegen eine echte Ergebnisseite.
+#
+# Platzhalter im search_url_template werden aus den Suchkriterien gefuellt:
+#   {query} {price_max} {year_min} {km_max} {zip_code} {radius_km} {page}
+# Jeder Selektor darf eine Liste sein - der erste Treffer gewinnt (Fallbacks).
+
+defaults:
+  # Reihenfolge der Attribute, aus denen eine Bild-URL gelesen wird.
+  # data-src steht bewusst vorn: Lazyload-Seiten legen dort das echte Bild ab
+  # und setzen in src nur einen Platzhalter.
+  image_url_attrs: [data-src, data-srcset, srcset, src, data-imgsrc]
+  # Bild-URLs, die diese Textbausteine enthalten, werden verworfen
+  # (Platzhalter, Logos, Icons - sie kosten nur Vision-Rechenzeit).
+  image_url_deny: [nopic, placeholder, /content/, dummy, blank., spacer, logo, /icons/, .svg]
+  max_pages: 3
+
+sites:
+  kleinanzeigen:
+    name: Kleinanzeigen
+    enabled: true
+    base_url: https://www.kleinanzeigen.de
+    fetcher: playwright
+    search_url_template: >-
+      https://www.kleinanzeigen.de/s-motorraeder/preis:0:{price_max}/{query}/k0c305
+    # Kleinanzeigen kennt keinen serverseitigen Baujahr-/km-Filter in der URL,
+    # deshalb wird beides in Stufe 1 lokal nachgefiltert (prefilter_local).
+    prefilter_local: [year_min, km_max]
+    pagination:
+      mode: path
+      # {page} wird eingesetzt, Seite 1 nutzt das Template ohne Suffix.
+      template: >-
+        https://www.kleinanzeigen.de/s-motorraeder/seite:{page}/preis:0:{price_max}/{query}/k0c305
+    wait_for: ["#srchrslt-adtable", "article.aditem"]
+    list:
+      item: ["article.aditem", "li.ad-listitem article"]
+      link: ["a.ellipsis", "h2 a", "a[href^='/s-anzeige/']"]
+      title: ["a.ellipsis", "h2 a"]
+      price: [".aditem-main--middle--price-shipping--price", ".aditem-details strong"]
+      location: [".aditem-main--top--left"]
+    detail:
+      wait_for: ["#viewad-description-text", "#viewad-title"]
+      title: ["#viewad-title", "h1"]
+      price: ["#viewad-price", "h2.boxedarticle--price"]
+      description: ["#viewad-description-text", ".viewad-description"]
+      location: ["#viewad-locality"]
+      images: ["#viewad-image", ".galleryimage-element img", "#viewad-product img"]
+      attributes:
+        container: ["#viewad-details .addetailslist--detail", ".addetailslist--detail"]
+        label: [".addetailslist--detail--value"]
+      attribute_map:
+        km: ["kilometerstand", "km-stand"]
+        year: ["erstzulassung", "baujahr"]
+        model: ["modell", "fahrzeugtyp"]
+
+  mobile_de:
+    name: mobile.de
+    enabled: true
+    base_url: https://suchen.mobile.de
+    fetcher: playwright
+    search_url_template: >-
+      https://suchen.mobile.de/fahrzeuge/search.html?dam=false&isSearchRequest=true
+      &ms={query}&priceTo={price_max}&mileageTo={km_max}&minFirstRegistrationDate={year_min}-01-01
+      &vc=Motorbike&sfmr=false
+    pagination:
+      mode: query
+      param: pageNumber
+    wait_for: ["[data-testid='result-list']", ".cBox--resultList"]
+    list:
+      item: ["[data-testid^='result-listing']", ".cBox-body--resultitem"]
+      link: ["a.result-item", "a[href*='/fahrzeuge/details.html']"]
+      title: ["[data-testid='result-listing-title']", ".h3"]
+      price: ["[data-testid='price-label']", ".h3.u-block"]
+      location: ["[data-testid='sell-type-and-seller-info']", ".seller-address"]
+    detail:
+      wait_for: ["#db-vehicle-description", "#rbt-ad-description"]
+      title: ["#ad-title", "h1"]
+      price: ["[data-testid='prime-price']", ".h3.u-block"]
+      description: ["#db-vehicle-description", "#rbt-ad-description", ".description"]
+      location: ["#rbt-seller-address"]
+      images: ["[data-testid='gallery-image']", ".gallery-img", "img.gallery-picture"]
+      attributes:
+        container: ["[data-testid='vip-technical-data-box'] .g-row", ".key-feature"]
+        label: [".g-col-6", ".key-feature__label"]
+      attribute_map:
+        km: ["kilometerstand", "mileage"]
+        year: ["erstzulassung", "zulassung"]
+        model: ["modell", "fahrzeugtyp"]
+
+  tausendps:
+    name: 1000PS
+    enabled: true
+    base_url: https://www.1000ps.de
+    # 1000PS liefert die Trefferliste serverseitig - httpx/BeautifulSoup reicht.
+    # Selektoren gegen die Live-Seite verifiziert (Stand: Projektstart).
+    fetcher: http
+    # Belegt funktioniert nur der Volltext-Parameter `query`; Preis-, km- und
+    # Baujahr-Filter setzt die Seite per JavaScript. Deshalb wird hier lokal
+    # nachgefiltert statt sich auf ungeprüfte URL-Parameter zu verlassen.
+    search_url_template: https://www.1000ps.de/gebrauchte-motorraeder?query={query}
+    prefilter_local: [year_min, km_max]
+    pagination:
+      mode: query
+      param: seite
+    list:
+      item: [".card.boxshadow", ".vehicle-list-item"]
+      link: ["a[href^='/gebrauchtes-motorrad-']", "a[href*='gebrauchtmotorrad']"]
+      title: [".card-title a", "h2"]
+      price: [".pricesize", ".price"]
+      location: [".card-text .colorfontgrey", ".location"]
+    detail:
+      title: ["h1", ".vehicle-title"]
+      price: [".pricesize", ".price"]
+      description: [".col.text-break", ".vehicle-description"]
+      location: ["a.greylink .row.g-0 .col", ".motorraddetaildaten2"]
+      images: ["a.swipebox img", ".gallery img"]
+      attributes:
+        container: [".row.g-0:has(> .col.colorfontgrey)", ".motorraddetaildaten .row"]
+        label: [".col + .col", ".label"]
+      attribute_map:
+        km: ["kilometer", "km-stand"]
+        year: ["baujahr", "erstzulassung", "jahr"]
+        model: ["modell", "typ"]
